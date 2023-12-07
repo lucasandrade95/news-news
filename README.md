@@ -5,6 +5,7 @@ intuitiva, navegação personalizada e notificações em tempo real, proporciona
 
 ## Instalação
 
-1. Execute `npm install` ou `yarn install` para instalar as dependências.
-2. Vá no diretório da pasta ios e rode o comando `pod install` para instalar as dependências do Iphone.
-3. Execute `npm ios` ou `yarn ios` para rodar o projeto em seu simulador de Iphone
+1. Tenha o Node 16 ou mais recente
+2. Execute `npm install` ou `yarn install` para instalar as dependências.
+3. Vá no diretório da pasta ios e rode o comando `pod install` para instalar as dependências do Iphone.
+4. Execute `npm ios` ou `yarn ios` para rodar o projeto em seu simulador de Iphone

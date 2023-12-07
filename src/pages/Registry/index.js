@@ -18,45 +18,57 @@ export default function Registry() {
     const [activeButton, setActiveButton] = useState(null);
     const [showPassword, setShowPassword] = useState(false);
     const [isValidate, setIsValidate] = useState(false);
+    const [selectedNewsCategory, setSelectedNewsCategory] = useState(null);
 
     const handleButtonClick = (buttonName) => {
         setActiveButton(buttonName);
-    }
+        setSelectedNewsCategory(buttonName);
+    };
 
     const togglePasswordVisibility = () => {
         setShowPassword((prevShowPassword) => !prevShowPassword);
     };
 
     const createProfile = response => {
-        db().ref(`/users/${response.user.uid}`).set({ name, email, password });
-    }
+        const userData = {
+            name,
+            email,
+            password,
+            newsCategory: selectedNewsCategory,
+        };
+        db().ref(`/users/${response.user.uid}`).set(userData);
+    };
 
     const registerAndGotoMainflow = async () => {
         const isValidEmail = validateEmail();
 
         if (isValidEmail) {
             setIsValidate(true);
-            if (email && password) {
+            if (email && password.length < 6) {
+                Alert.alert('A senha tem que ter no mínimo 6 caracteres');
+            } else if (email && password) {
                 try {const response = await auth().createUserWithEmailAndPassword(
                     email, password
                 );
                     if (response.user) {
                         await response.user.updateProfile({
-                            displayName: name,
+                            displayName: name
                         });
+                        Alert.alert('Cadastrado com sucesso!');
 
                         createProfile(response);
 
-                        Alert.alert(`Bem-vindo, ${response.user.displayName || ''}!`);
-                        navigation.navigate('SignIn');
+                        navigation.navigate('Home');
                         await AsyncStorage.setItem('userToken', response.user.uid);
 
                     }
                 } catch (e) {
-                    Alert.alert('Erro com o cadastro')
+                    Alert.alert('Usuário cadastrado, faça login!')
+                    navigation.navigate('SignIn');
                 }
             } else {
                 Alert.alert('Preencha todos os dados!')
+
             }
         } else {
             setIsValidate(false);
@@ -105,6 +117,7 @@ export default function Registry() {
                         style={styles.input}
                         secureTextEntry={!showPassword}
                         onChangeText={setPassword}
+                        maxLength={40}
                     />
                     <TouchableOpacity onPress={togglePasswordVisibility} style={styles.eyeIconContainer}>
                         <FontAwesomeIcon icon={showPassword ? faEye : faEyeSlash} size={30} />

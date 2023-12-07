@@ -1,13 +1,15 @@
-import React, {useEffect, useState, FlatList} from 'react';
+import React, {useEffect, useState, FlatList, useCallback} from 'react';
 import {View,Image, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView} from 'react-native';
 import * as Animatable from 'react-native-animatable';
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
-import { faHome, faUserCircle, faEyeSlash, faEye } from '@fortawesome/free-solid-svg-icons';
+import { faHome, faUserCircle, faEyeSlash, faEye, faTimes } from '@fortawesome/free-solid-svg-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import Modal from 'react-native-modal';
 import auth from '@react-native-firebase/auth';
 import axios from 'axios';
+import {WebView} from "react-native-webview";
+import db from "@react-native-firebase/database";
 
 export default function SignIn() {
 
@@ -22,9 +24,23 @@ export default function SignIn() {
     const [isExpanded, setIsExpanded] = useState(false);
     const [news, setNews] = useState([]);
     const [activeButton, setActiveButton] = useState('');
+    const [modalVisible, setModalVisible] = useState(false);
+    const [selectedNewsUrl, setSelectedNewsUrl] = useState('');
     const [isValidate, setIsValidate] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState('');
+    const [userData, setUserData] = useState(null);
+
     const apiKey = '8b29ab9840864132a8dc59c270111d17';
     // const apiKey = 'abe34e5bd8c3473abacf2eadac15e7bc';
+
+    const handleNewsClick = (url) => {
+        setSelectedNewsUrl(url);
+        setModalVisible(true);
+    };
+
+    const closeModal = () => {
+        setModalVisible(false);
+    };
 
     const toggleExpand = () => {
         setIsExpanded((prevExpanded) => !prevExpanded);
@@ -40,13 +56,19 @@ export default function SignIn() {
 
         if (isValidEmail) {
             setIsValidate(true);
-            if (email && password) {
+            if (email && password.length < 6) {
+                Alert.alert('A senha tem que ter no mínimo 6 caracteres');
+            } else if (email && password) {
                 try {
                     const response = await auth().signInWithEmailAndPassword(email, password);
                     setUser(response.user);
                     await AsyncStorage.setItem('userToken', response.user.uid);
+                    Alert.alert('Bem-vindo!');
+
+                    await getUserCategory(response.user.uid);
+
                     setIsExpanded(false);
-                    navigation.navigate('SignIn');
+                    navigation.navigate('Home');
                 } catch (error) {
                     Alert.alert('Não cadastrado!');
                     navigation.navigate('Registry');
@@ -60,27 +82,54 @@ export default function SignIn() {
         }
     };
 
+
+    const getUserCategory = async (uid) => {
+        try {
+            const snapshot = await db().ref(`/users/${uid}`).once('value');
+            if (snapshot.exists()) {
+                const userDataFromSnapshot = snapshot.val();
+                console.log('Informações do usuário:', userDataFromSnapshot);
+
+                // Certifique-se de que 'userData' está definido
+                if (userDataFromSnapshot) {
+                    const newsCategory = userDataFromSnapshot.newsCategory;
+                    setSelectedCategory(newsCategory);
+                    setUserData(userDataFromSnapshot);
+                    console.log('Categoria da notícia:', newsCategory);
+                } else {
+                    console.log('Dados do usuário não encontrados no banco de dados');
+                }
+            } else {
+                console.log('Usuário não encontrado no banco de dados');
+            }
+        } catch (error) {
+            console.error('Erro ao obter informações do usuário:', error);
+        }
+    };
+
+
+
     const handleLogout = async () => {
         try {
+            Alert.alert('Saiu com sucesso!');
             await auth().signOut();
             setUser(null);
             await AsyncStorage.removeItem('userToken');
             setIsExpanded(false);
 
-            Alert.alert('Saiu com sucesso!');
+            navigation.navigate('Home');
+
         } catch (error) {
             console.error('Erro ao fazer logout:', error);
         }
     };
 
-    const handleButtonClick = (button) => {
-        if (activeButton === button) {
-            setActiveButton(null);
-            setNews([]);
-        } else {
-            setActiveButton(button);
-        }
+    const handleButtonClick = async (button) => {
+        setSelectedCategory(button);
+        const newsData = await fetchNewsByCategory(button, currentPage, pageSize);
+        setNews(newsData);
     };
+
 
     const fetchNewsByCategory = async (category, page = 1, pageSize = 10) => {
         switch (category) {
@@ -210,27 +259,85 @@ export default function SignIn() {
         return emailRegex.test(email);
     };
 
-    // useEffect(() => {
-    //     fetchNewsByCategory(activeButton, currentPage, pageSize).then(initialNews => {
-    //         setNews(initialNews);
-    //     });
-    // }, [activeButton]);
+    const truncateLink = (link, maxLength) => {
+        if (link.length > maxLength) {
+            return link.substring(0, maxLength) + '....';
+        }
+        return link;
+    };
+
+    const getUserData = async () => {
+        try {
+            const currentUser = auth().currentUser;
+
+            if (currentUser) {
+                const uid = currentUser.uid;
+                const snapshot = await db().ref(`/users/${uid}`).once('value');
+
+                // Verificar se o usuário tem dados no banco de dados
+                if (snapshot.exists()) {
+                    const userData = snapshot.val();
+                    console.log('Informações do usuário:', userData);
+
+                    // Agora você pode acessar a categoria da notícia
+                    const newsCategory = userData.newsCategory;
+                    setSelectedCategory(newsCategory);
+
+                    console.log('Categoria da notícia:', newsCategory);
+                } else {
+                    console.log('Usuário não encontrado no banco de dados');
+                }
+            } else {
+                console.log('Nenhum usuário autenticado');
+            }
+        } catch (error) {
+            console.error('Erro ao obter informações do usuário:', error);
+        }
+    };
+
+
+    const checkUserLoggedIn = async () => {
+        const currentUser = auth().currentUser;
+        console.log(currentUser);
+
+        if (currentUser) {
+            setUser(currentUser);
+            const newsData = await fetchNewsByCategory(selectedCategory, currentPage, pageSize);
+            setNews(newsData);
+        }
+    };
+
+
+    useFocusEffect(
+        useCallback(() => {
+            const fetchData = async () => {
+                try {
+                    const newsData = await fetchNewsByCategory(selectedCategory, currentPage, pageSize);
+                    setNews(newsData);
+                } catch (error) {
+                    console.error('Erro ao obter notícias:', error);
+                }
+            };
+
+            fetchData();
+
+            return () => {
+                // Cleanup (se necessário)
+            };
+        }, [selectedCategory])
+    );
 
     useEffect(() => {
-        const checkUserLoggedIn = async () => {
-            // Verificar se há um usuário autenticado
-            const currentUser = auth().currentUser;
-            console.log(currentUser);
-            if (currentUser) {
-                // Se o usuário estiver logado, você pode definir o estado do usuário
-                setUser(currentUser);
-            }
-            const newsData = await fetchNewsByCategory(activeButton, currentPage, pageSize);
-            setNews(newsData);
-        };
+        console.disableYellowBox = true;
+
+        getUserData();
+
+        fetchNewsByCategory('', currentPage, pageSize)
+            .then((newsData) => setNews(newsData));
 
         checkUserLoggedIn();
-    }, [activeButton]);
+    }, []);
+
 
 
     return (
@@ -254,7 +361,7 @@ export default function SignIn() {
                         {user && (
                             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                                 <Text style={styles.logoutButtonText}>
-                                    {`${user.displayName}, sair da sua conta?`}</Text>
+                                    {` Sair da sua conta?`}</Text>
                             </TouchableOpacity>
                         )}
                         <Text style={styles.title}>Email</Text>
@@ -280,14 +387,16 @@ export default function SignIn() {
                         <TouchableOpacity style={styles.button} onPress={registerAndGotoMainflow}>
                             <Text style={styles.buttonText}> Acessar </Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.buttonRegister} onPress={() => navigation.navigate('Registry')}>
-                            <Text style={styles.buttonRegisterText}> Cadastrar </Text>
-                        </TouchableOpacity>
+                        <View style={styles.buttonContainerUser}>
+                            <TouchableOpacity style={styles.buttonRegister} onPress={() => navigation.navigate('Registry')}>
+                                <Text style={styles.buttonRegisterText}> Cadastrar </Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 )}
 
                 {user && (
-                    <Text>{`Bem-vindo, ${user.displayName || 'Usuário'}`}</Text>
+                    <Text style={{marginBottom: 5}}>{`Bem-vindo, ${user.displayName || 'Usuário'}`}</Text>
                 )}
 
 
@@ -297,22 +406,24 @@ export default function SignIn() {
 
                     {['Tecnologia', 'Ciência', 'Saúde', 'Negócios', 'Esportes', 'Entretenimento']
                         .map((category, index) => (
-                        <TouchableOpacity
-                            key={index}
-                            style={[
-                                styles.buttonSwitch,
-                                activeButton === category && styles.activeButton,
-                                { width: '30%' },
-                            ]}
-                            onPress={() => handleButtonClick(category)}
-                        >
-                            <Text style={[
-                                styles.buttonSwitchText,
-                                activeButton === category && styles.activeButton,
-                            ]}
-                            >{category}</Text>
-                        </TouchableOpacity>
-                    ))}
+                            <TouchableOpacity
+                                key={index}
+                                style={[
+                                    styles.buttonSwitch,
+                                    selectedCategory === category && styles.activeButton,
+                                    { width: '30%' },
+                                ]}
+                                onPress={() => handleButtonClick(category)}
+                            >
+                                <Text style={[
+                                    styles.buttonSwitchText,
+                                    selectedCategory === category && styles.activeButton,
+                                ]}
+                                >{category}</Text>
+                            </TouchableOpacity>
+                        ))}
+
+
                 </View>
                 <ScrollView>
                     {news ? (
@@ -324,7 +435,10 @@ export default function SignIn() {
                                         <Image source={{ uri: article.urlToImage }} style={styles.newsImage} />
                                     )}
                                     <Text style={styles.newsDescription}>{article.description}</Text>
-                                    <Text style={styles.newsUrl}>{article.url}</Text>
+                                    {/* Adicione um botão/link para abrir a URL da notícia */}
+                                    <TouchableOpacity onPress={() => handleNewsClick(article.url)}>
+                                        <Text style={styles.newsUrl}>{truncateLink(article.url, 150)}</Text>
+                                    </TouchableOpacity>
                                 </View>
                             ))}
                         </View>
@@ -332,6 +446,18 @@ export default function SignIn() {
                         <Text>Loading...</Text>
                     )}
                 </ScrollView>
+                <Modal
+                    isVisible={modalVisible}
+                    onBackdropPress={closeModal}
+                    animationIn="slideInUp"
+                    style={{ overflow: 'hidden' }}>
+                    <View style={{ flex: 1, maxHeight: 750, borderRadius: 20, overflow: 'hidden' }}>
+                        <WebView source={{ uri: selectedNewsUrl }} style={{ flex: 1 }} />
+                        <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
+                            <FontAwesomeIcon icon={faTimes} style={styles.closeIcon} size={20}/>
+                        </TouchableOpacity>
+                    </View>
+                </Modal>
 
 
             </Animatable.View>
@@ -480,7 +606,7 @@ const styles = StyleSheet.create({
         right: 0,
         height: '100%',
         justifyContent: 'center',
-        paddingTop: 30,
+        paddingTop: 70,
         paddingRight: 10,
     },
     logoutButton: {
@@ -499,5 +625,24 @@ const styles = StyleSheet.create({
     },
     titleButtons : {
         color: '#538AE4'
+    },
+    closeButton: {
+        position: 'absolute',
+        top: 5,
+        right: 5,
+        padding: 5,
+        borderRadius: 50, // Valor grande para garantir uma borda circular
+        borderWidth: 2, // Largura da borda
+        borderColor: '#007BFF', // Cor azul (ajuste conforme necessário)
+        backgroundColor: 'white', // Cor de fundo para garantir que a borda seja visível
+    },
+    closeIcon: {
+        fontSize: 20,
+        color: '#007BFF', // Cor azul (ajuste conforme necessário)
+    },
+    buttonContainerUser : {
+        flexDirection: 'row', // Isso define a direção do eixo principal como "row", colocando os itens lado a lado
+        marginTop: 20,
+        justifyContent: 'center'
     }
 });

@@ -154,7 +154,6 @@ export default function SignIn() {
         try {
             const response = await axios.get(
                 `https://newsapi.org/v2/top-headlines?country=br&category=technology&apiKey=${apiKey}&page=${page}&pageSize=${pageSize}`
-                // `https://newsapi.org/v2/top-headlines?country=br&apiKey=${apiKey}&page=${page}&pageSize=${pageSize}`
             );
 
             if (response.data && response.data.articles) {
